@@ -1,0 +1,6 @@
+.idea
+vendor
+dev.sh
+Vagrantfile
+provisioning
+.DS_Store
