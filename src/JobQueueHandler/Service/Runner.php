@@ -19,13 +19,12 @@ class Runner
     public function run(): void
     {
         echo 'Starting choreographer for 25 cycles' . PHP_EOL;
-        $loopCount = 0;
         $jobs = 0;
         $round = 0;
         while ($round < 25) {
-            $loopCount++;
+            $round++;
             echo "#############################################################\n";
-            echo 'Round: '. date('h:i:s') ." $loopCount \n";
+            echo 'Round: '. date('h:i:s') ." $round \n";
             if (count($this->workers) < 5) {
                 $this->workers[$jobs] = new Worker();
                 $jobs++;
