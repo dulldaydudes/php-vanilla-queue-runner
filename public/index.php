@@ -16,8 +16,9 @@ require 'vendor/autoload.php';
 (function () {
     /** @var \Psr\Container\ContainerInterface $container */
     $container = require 'config/container.php';
+    $config = $container->get('config') ?: [];
 
     /** @var \JobQueueHandler\Service\Runner $queueHandler */
     $queueHandler = $container->get(\JobQueueHandler\Service\Runner::class);
-    echo $queueHandler->run();
+    echo $queueHandler->run($config);
 })();
