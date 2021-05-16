@@ -4,67 +4,90 @@ declare(strict_types=1);
 
 namespace JobQueueHandler\Service;
 
+use JobQueueHandler\Exception\RunnerProcessException;
+
 /**
  * Class JobQueueHandlerRunner
  * @package JobQueueHandler
  */
 class Runner
 {
+    /** @var int */
     protected int $timeSlice = 5;
+    /** @var array */
     protected array $workers = [];
+    /** @var array */
+    protected array $config;
+    /** @var bool */
+    protected bool $killMe = false;
+    /** @var resource */
+    protected $lockFile;
+    /** @var resource */
+    protected $gotLock;
+    /** @var resource */
+    protected $wouldBlock;
 
     /**
-     *
+     * @param array $config
      */
-    public function run(): void
+    public function run(array $config): void
     {
-        echo 'Starting choreographer for 25 cycles' . PHP_EOL;
-        $jobs = 0;
-        $round = 0;
-        while ($round < 25) {
-            $round++;
-            echo "#############################################################\n";
-            echo 'Round: '. date('h:i:s') ." $round \n";
-            if (count($this->workers) < 5) {
-                $this->workers[$jobs] = new Worker();
-                $jobs++;
-            }
-            foreach ($this->workers as $index => $worker) {
-                echo 'Job: '. ($index + 1) . PHP_EOL;
-
-                /*
-                command	string	The command string that was passed to proc_open().
-                pid	int	process id
-                running	bool	true if the process is still running, false if it has terminated.
-                signaled	bool	true if the child process has been terminated by an uncaught signal. Always set to false on Windows.
-                stopped	bool	true if the child process has been stopped by a signal. Always set to false on Windows.
-                exitcode	int	The exit code returned by the process (which is only meaningful if running is false). Only first call of this function return real value, next calls return -1.
-                termsig	int	The number of the signal that caused the child process to terminate its execution (only meaningful if signaled is true).
-                stopsig	int	The number of the signal that caused the child process to stop its execution (only meaningful if stopped is true).
-                */
-
-                if ($worker->getState()['running'] == true) {
-                    echo 'Job running' . PHP_EOL;
-                } else {
-                    echo 'Job ended' . PHP_EOL;
-                    echo 'Out :'. $worker->getOut() . PHP_EOL;
-                    echo 'Error :'. $worker->getError() . PHP_EOL . PHP_EOL;
-                    unset($worker);
-                    unset($this->workers[$index]);
-                }
-            }
-            sleep($this->timeSlice);
-            $round++;
+        $this->config = $config;
+        try {
+            $this->lockProzess();
+        } catch (RunnerProcessException $exception) {
+            exit ($exception->getMessage());
         }
+        $this->timeSlice = $this->config['time-slice-in-seconds'] ?: 5;
 
-        echo 'going to sleep…' . PHP_EOL;
+        do {
+            // Job-Loader
+            // Job-Processor
+            sleep($this->timeSlice);
+        } while (!$this->$this->killMe);
+
+        $this->unloadAll();
     }
 
-    public function __destruct()
+    /**
+     * @throws \JobQueueHandler\Exception\RunnerProcessException
+     */
+    protected function lockProzess(): void
+    {
+        $this->lockFile = fopen($this->config['worker-config']['pid-file'], 'c');
+        $this->gotLock = flock($this->lockFile, LOCK_EX | LOCK_NB, $this->wouldBlock);
+        if ($this->lockFile === false || (!$this->gotLock && !$this->wouldBlock)) {
+            throw RunnerProcessException::cantCreatePidFile($this->config['worker-config']['pid-file']);
+        } else if (!$this->gotLock && $this->wouldBlock) {
+            exit('Another instance is already running; terminating.');
+        }
+
+        // Lock acquired; let's write our PID to the lock file for the convenience
+        // of humans who may wish to terminate the script.
+        ftruncate($this->lockFile, 0);
+        fwrite($this->lockFile, getmypid() . PHP_EOL);
+    }
+
+    protected function unlockProzess(): void
+    {
+        // All done; we blank the PID file and explicitly release the lock
+        // (although this should be unnecessary) before terminating.
+        ftruncate($this->lockFile, 0);
+        flock($this->lockFile, LOCK_UN);
+    }
+
+    protected function unloadAll()
     {
         foreach ($this->workers as $index => $worker) {
             unset($worker);
             unset($this->workers[$index]);
         }
+
+        $this->unlockProzess();
+    }
+
+    public function __destruct()
+    {
+        $this->unloadAll();
     }
 }
