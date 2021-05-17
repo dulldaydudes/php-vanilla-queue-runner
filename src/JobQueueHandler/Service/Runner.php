@@ -5,6 +5,11 @@ declare(strict_types=1);
 namespace JobQueueHandler\Service;
 
 use JobQueueHandler\Exception\RunnerProcessException;
+use JobQueueHandler\Job\FileLoader;
+use JobQueueHandler\Job\LoaderInterface;
+use JobQueueHandler\Queue\JobQueue;
+use MiniCliRoutes\Service\Router;
+use Psr\Container\ContainerInterface;
 
 /**
  * Class JobQueueHandlerRunner
@@ -14,7 +19,9 @@ class Runner
 {
     /** @var int */
     protected int $timeSlice = 5;
-    /** @var array */
+    /** @var JobQueue */
+    protected JobQueue $queue;
+    /** @var array  */
     protected array $workers = [];
     /** @var array */
     protected array $config;
@@ -26,27 +33,53 @@ class Runner
     protected $gotLock;
     /** @var resource */
     protected $wouldBlock;
+    /** @var \JobQueueHandler\Job\LoaderInterface */
+    protected LoaderInterface $jobLoader;
+    /** @var \MiniCliRoutes\Service\Router  */
+    protected Router $router;
 
     /**
      * @param array $config
+     * @param \MiniCliRoutes\Service\Router $router
+     * @param ContainerInterface $container
      */
-    public function run(array $config): void
+    public function run(array $config, Router $router, ContainerInterface $container): void
     {
-        $this->config = $config;
+
         try {
-            $this->lockProzess();
-        } catch (RunnerProcessException $exception) {
+            $middleWareList = $router->handle();
+        } catch (\Exception $exception) {
             exit ($exception->getMessage());
         }
-        $this->timeSlice = $this->config['time-slice-in-seconds'] ?: 5;
 
-        do {
-            // Job-Loader
-            // Job-Processor
-            sleep($this->timeSlice);
-        } while (!$this->$this->killMe);
+        foreach ($middleWareList as $middleware) {
+            $container->get($middleware)();
+        }
 
-        $this->unloadAll();
+
+
+//        $this->config = $config['worker-config'];
+//        try {
+//            $this->lockProzess();
+//        } catch (RunnerProcessException $exception) {
+//            exit ($exception->getMessage());
+//        }
+//        $this->timeSlice = $this->config['time-slice-in-seconds'] ?: 5;
+//        $this->queue = new JobQueue();
+//
+//        // ToDo: DB Loader?
+//        $this->jobLoader = new FileLoader($this->config['serialize-path']);
+//        do {
+//            // Job-Loader
+//            $this->jobLoader->checkForNew($this->queue);
+//            // Job-Processor
+//            foreach ($this->queue as $job) {
+//                $this->workers[] = new Worker($job);
+//            }
+//            sleep($this->timeSlice);
+//        } while (!$this->$this->killMe);
+//
+//        $this->unloadAll();
     }
 
     /**
@@ -88,6 +121,6 @@ class Runner
 
     public function __destruct()
     {
-        $this->unloadAll();
+//        $this->unloadAll();
     }
 }
